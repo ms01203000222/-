@@ -129,9 +129,9 @@
     <script>
         let subscribers = [], imagesData = {}, currentUser = null, currentSubIndex = -1, currentFilteredList = [], displayLimit = 50;
         
-        // --- بيانات قاعدة البيانات (تم وضعها هنا بالداخل بشكل صحيح) ---
+        // --- بيانات قاعدة البيانات (تم تحديثها بالمفتاح الصحيح) ---
         const SB_URL = 'https://ebspeaxeloarfbfkbawn.supabase.co'; 
-        const SB_KEY = 'sb_publishable_R_GXFunlhaCxZxq3xSjbfQ_qC5CdtiM';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVic3BlYXhlbG9hcmZiZmtiYXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyNjYxNTYsImV4cCI6MjA5Mjg0MjE1Nn0.YvCx5Sy3HUIaqlgjvTppzoRq3M9VGldQHZejscphZ5k';
         // ---------------------------------------------------------
 
         let supabase = null;
@@ -162,7 +162,10 @@
                 const statusDiv = document.getElementById('cloud-status');
                 if (!error) statusDiv.innerHTML = '<i class="fa-solid fa-cloud text-green-400"></i> متصل بالسحابة (مزامنة حية)';
                 else statusDiv.innerHTML = '<i class="fa-solid fa-circle text-orange-400"></i> خطأ في الربط السحابي';
-            } catch(e) {}
+            } catch(e) {
+                console.error("Cloud connection failed", e);
+                document.getElementById('cloud-status').innerHTML = '<i class="fa-solid fa-circle text-orange-400"></i> بانتظار الاتصال (أوفلاين)';
+             }
         }
 
         function saveUserInfo() {
@@ -275,13 +278,13 @@
         function closeModal() { document.getElementById('reading-modal').classList.add('hidden'); }
         function toggleCloudSettings() { document.getElementById('cloud-modal').classList.toggle('hidden'); }
 
-        const cam = document.getElementById('native-camera');
-        const gal = document.getElementById('native-gallery');
-        let photoSrc = '';
-        function openCamera() { photoSrc = 'camera'; cam.click(); }
-        function openGallery() { photoSrc = 'gallery'; gal.click(); }
+        const nativeCam = document.createElement('input'); nativeCam.type = 'file'; nativeCam.accept = 'image/*'; nativeCam.capture = 'environment';
+        const nativeGal = document.createElement('input'); nativeGal.type = 'file'; nativeGal.accept = 'image/*';
+        let photoSource = '';
+        function openCamera() { photoSource = 'camera'; nativeCam.click(); }
+        function openGallery() { photoSource = 'gallery'; nativeGal.click(); }
 
-        [cam, gal].forEach(i => i.addEventListener('change', function(e) {
+        [nativeCam, nativeGal].forEach(input => input.addEventListener('change', function(e) {
             const f = e.target.files[0]; if(!f) return;
             const r = new FileReader();
             r.onload = (env) => {
@@ -303,8 +306,8 @@
         async function saveReading() {
             const s = subscribers[currentSubIndex]; const val = document.getElementById('reading-input').value;
             if (!s.imageSaved) return alert("الصورة مطلوبة!");
-            if (photoSrc === 'camera') {
-                const pos = await new Promise(r => navigator.geolocation.getCurrentPosition(r, () => r(null), {timeout: 10000}));
+            if (photoSource === 'camera') {
+                const pos = await new Promise(res => navigator.geolocation.getCurrentPosition(res, () => res(null), {timeout: 10000}));
                 if (!pos) return alert("الموقع مطلوب مع الكاميرا!");
                 s.lat = pos.coords.latitude; s.lng = pos.coords.longitude;
             } else { s.lat = 'معرض'; s.lng = 'معرض'; }
@@ -318,13 +321,14 @@
             closeModal(); renderListChunk(); showToast("تم الحفظ محلياً...");
             
             if (supabase) {
-                await supabase.from('field_readings').upsert({
+                const { error } = await supabase.from('field_readings').upsert({
                     sync_id: s.meterNumber + "_" + Date.now(),
                     recorder_name: currentUser, meter_number: s.meterNumber, account_number: s.accountNumber,
                     reading_value: s.reading, status: s.status, consumption: s.consumption,
                     latitude: s.lat, longitude: s.lng
                 });
-                showToast("تم الرفع للسحابة ✅");
+                if (!error) showToast("تم الرفع للسحابة ✅");
+                else console.error("Sync error:", error);
             }
         }
 
@@ -333,7 +337,7 @@
             const r = new FileReader();
             r.onload = (evt) => {
                 const wb = XLSX.read(new Uint8Array(evt.target.result), {type: 'array'});
-                const json = XLSX.utils.sheet_to_json(wb.Sheets[workbook.SheetNames[0]], {header: 1});
+                const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1});
                 const heads = json[0] || [];
                 const eI = heads.findIndex(h => h && String(h).includes('هندس'));
                 const zI = heads.findIndex(h => h && String(h).includes('منطق'));
@@ -369,7 +373,12 @@
             zip.generateAsync({type:"blob"}).then(c => saveAs(c, `Export_${currentUser}.zip`));
         }
 
-        async function syncDataNow() { showToast("جاري المزامنة السحابية..."); }
+        async function syncDataNow() { 
+            showToast("جاري المزامنة..."); 
+            checkCloud(); 
+        }
+        
+        function clearSystemData() { if(confirm("حذف كل البيانات سيعيد التطبيق كأنه جديد. هل أنت متأكد؟")) { localforage.clear(); location.reload(); } }
     </script>
 </body>
 </html>
